@@ -1,0 +1,5 @@
+streamlit
+pdfplumber      # 对应 pdf.js，用于Python端强大的PDF解析
+python-docx     # 对应 mammoth.js，但功能更强，能读格式
+pandas          # 数据处理
+numpy           # 数学计算
