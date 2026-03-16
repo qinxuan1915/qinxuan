@@ -2,16 +2,17 @@ import re
 
 def check(pdf_pages, detected_offset=0):
     """
-    目录一致性检测工具：
-    1. 识别目录中的章节号、标题和页码。
-    2. 跳转至正文对应页码，核实标题是否存在。
+    目录一致性检测工具（增强版）：
+    1. 优化正则匹配，强制要求引导符或明显间距。
+    2. 增加非法数据过滤，防止误读正文表格/坐标。
     """
     results = []
     toc_items = []
     is_in_toc_area = False
+    total_pages = len(pdf_pages)
     
     # --- 第一步：解析目录区域 ---
-    for i in range(min(20, len(pdf_pages))):
+    for i in range(min(20, total_pages)):
         page = pdf_pages[i]
         text = ""
         if isinstance(page, dict):
@@ -25,21 +26,29 @@ def check(pdf_pages, detected_offset=0):
         
         for line in lines:
             if not is_in_toc_area:
-                # 识别目录入口
                 if re.search(r'^(目\s*录|CONTENTS)$', line.replace(" ", "")):
                     is_in_toc_area = True
                 continue
             
-            # 正则捕获：Section(章节号), Gap(间距), Title(标题), Page(页码)
-            # 兼容：1.1 标题...1 或 第一章 标题...1
-            pattern = r'^((?:第\s*[0-9一二三四五六七八九十]+\s*[章节])|(?:[0-9\.]+))(.*?)(\S.*?)(?:\s*[\.·—… \s]+\s*|\s+)(\d+)$'
+            # --- 核心改进：加强版正则表达式 ---
+            # 1. 标题和页码之间必须有引导符 (....) 或 3个以上的空格
+            # 2. 页码必须是 1-4 位数字，过滤掉超长异常数字
+            pattern = r'^((?:第\s*[0-9一二三四五六七八九十]+\s*[章节])|(?:[0-9\.]+))(.*?)(\S.*?)(?:\s*[\.·—…]{2,}\s*|\s{3,})(\d{1,4})$'
             match = re.match(pattern, line)
             
             if match:
                 section, gap, title, p_str = match.groups()
                 page_val = int(p_str)
                 
-                # 简单的过滤逻辑：防止重复抓取
+                # --- 核心改进：过滤逻辑 ---
+                # 1. 页码不能为 0
+                # 2. 页码不能超过文档总数
+                # 3. 排除纯数字或纯特殊符号构成的“标题” (防止误匹配坐标数据)
+                if page_val == 0 or page_val > total_pages:
+                    continue
+                if re.match(r'^[0-9\.\s\-\,]+$', title): 
+                    continue
+
                 if toc_items and page_val < toc_items[-1]["page"]:
                     continue
 
@@ -55,19 +64,15 @@ def check(pdf_pages, detected_offset=0):
 
     # --- 第二步：检测目录与正文的对应关系 ---
     verification_details = []
-    # 尝试自动计算偏移量（假设目录中第一项的页码对应 PDF 实际的物理页码）
-    # 通常物理页码 = 目录页码 + offset
-    # 这里的逻辑可以根据实际 PDF 情况调整，默认先按 1:1 比对
-    
     success_count = 0
+    
     for item in toc_items:
-        target_page_idx = item["page"] + detected_offset - 1 # 转为从0开始的索引
+        target_page_idx = item["page"] + detected_offset - 1
         
-        if target_page_idx >= len(pdf_pages):
+        if target_page_idx < 0 or target_page_idx >= total_pages:
             status = "❌"
-            reason = "页码超出文档范围"
+            reason = f"页码 {item['page']} 超出文档范围"
         else:
-            # 获取目标页内容
             target_page = pdf_pages[target_page_idx]
             page_text = ""
             if isinstance(target_page, dict):
@@ -77,11 +82,9 @@ def check(pdf_pages, detected_offset=0):
             else:
                 page_text = getattr(target_page, 'text', "")
             
-            # 清理字符串进行模糊比对
             clean_title = item["title"].replace(" ", "")
             clean_page_text = page_text.replace(" ", "").replace("\n", "")
             
-            # 检查标题是否出现在该页的前 500 个字符内（通常标题在页首）
             if clean_title in clean_page_text:
                 status = "✅"
                 reason = "匹配成功"
@@ -90,8 +93,9 @@ def check(pdf_pages, detected_offset=0):
                 status = "❌"
                 reason = "正文页未找到匹配标题"
 
+        # 修改此处描述：将“目录页码”改为“在目录中显示的页码”
         verification_details.append(
-            f"{status} **{item['section']} {item['title']}** (目录页码: {item['page']})\n"
+            f"{status} **{item['section']} {item['title']}** (在目录中显示的页码: {item['page']})\n"
             f"   - 结果: {reason}"
         )
 
