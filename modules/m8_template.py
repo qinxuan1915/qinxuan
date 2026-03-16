@@ -1,7 +1,7 @@
 import re
 from utils.file_reader import build_chapter_map
 
-def check(pdf_pages, detected_offset=0):  # 修正点：添加了 detected_offset 参数，默认值为 0
+def check(pdf_pages, detected_offset=0):
     """
     对应 JS 版 modules/template.js
     检测章节完整性：引言、小结、居中格式
@@ -9,13 +9,18 @@ def check(pdf_pages, detected_offset=0):  # 修正点：添加了 detected_offse
     if not pdf_pages:
         return []
 
-    # 1. 重新构建章节映射 (获取每一章的页码范围)
-    # 注意：如果 build_chapter_map 内部需要偏移量，可以在此处传入
-    chapter_map = build_chapter_map(pdf_pages)
-    
-    issues = []
-    if not chapter_map:
+    # 1. 构建章节映射
+    raw_chapter_map = build_chapter_map(pdf_pages)
+    if not raw_chapter_map:
         return [{"type": "error", "msg": "❌ 未识别到任何章节，请检查目录格式或页码偏移量"}]
+
+    # --- 修复：按章节号去重，只保留每章最后一次出现的范围 (解决截图中的重复显示问题) ---
+    chapter_dict = {}
+    for ch in raw_chapter_map:
+        chapter_dict[ch['num']] = ch
+    chapter_map = sorted(chapter_dict.values(), key=lambda x: x['num'])
+
+    issues = []
 
     # 2. 遍历每一章进行检查
     for ch in chapter_map:
@@ -32,34 +37,40 @@ def check(pdf_pages, detected_offset=0):  # 修正点：添加了 detected_offse
             })
             continue
 
-        # --- 情况 B: 其他章节 (需要检测引言和小结) ---
+        # --- 情况 B: 其他章节 ---
         
         # 1. 检测【本章小结】
         has_summary = False
         is_centered = False
         
+        # 扩大检索范围，确保不遗漏边界页
         for p_idx in range(start_idx, end_idx + 1):
+            if p_idx >= len(pdf_pages): break
             page = pdf_pages[p_idx]
             
-            # 遍历所有提取出的词块
-            # 注意：pdfplumber 提取的 word 对象通常包含 'text' 和坐标 'x0'
-            for word in page.lines:
-                text = word.get('text', '').strip()
-                if re.match(r'^本\s*章\s*小\s*结$', text):
+            # 兼容处理：有些版本的 pdfplumber 使用 lines，有些使用 words
+            elements = getattr(page, 'lines', []) if hasattr(page, 'lines') else []
+            if not elements and hasattr(page, 'extract_words'):
+                elements = page.extract_words()
+
+            for word in elements:
+                text = word.get('text', '').replace(" ", "").strip()
+                if text == "本章小结":
                     has_summary = True
-                    # 居中判断逻辑：左边界坐标大于 200 (根据具体排版调整)
-                    if word.get('x0', 0) > 200: 
+                    # 居中判断：根据常见 A4 页面宽度，左边距在 200-280 之间通常为居中
+                    x_pos = word.get('x0', 0)
+                    if 180 < x_pos < 300: 
                         is_centered = True
                     break
-            
-            if has_summary:
-                break
+            if has_summary: break
 
         # 2. 检测【章节引言】
         has_intro = False
+        # 引言通常在章节标题后、第一个小节 (X.1) 之前
         search_limit = min(start_idx + 1, end_idx) 
         
         for p_idx in range(start_idx, search_limit + 1):
+            if p_idx >= len(pdf_pages): break
             page_text = pdf_pages[p_idx].text
             if not page_text: continue
             
@@ -79,40 +90,34 @@ def check(pdf_pages, detected_offset=0):  # 修正点：添加了 detected_offse
                     break 
             
             if title_line_idx != -1:
+                # 检查标题行和第一个小节行之间是否有实质性文字
                 if section_line_idx != -1:
                     for k in range(title_line_idx + 1, section_line_idx):
                         content = lines[k].strip()
-                        if len(content) > 5 and not re.match(r'^\d+$', content):
+                        # 过滤掉纯数字（页码）和过短的噪点
+                        if len(content) > 5 and not content.isdigit():
                             has_intro = True
                             break
                     break 
                 else:
+                    # 如果找到了标题但还没到下一页也没找到 X.1，暂定为有引言或引言过长
                     has_intro = True 
                     break
 
         # --- 3. 生成报告 ---
-        status_msg = f"第 {ch_num} 章检测: "
+        status_parts = []
+        status_parts.append("✅ 引言存在" if has_intro else "❌ 缺失引言")
         
-        if has_intro:
-            status_msg += "✅ 引言存在 | "
-        else:
-            status_msg += "❌ 缺失引言 | "
-            
         if not has_summary:
-            status_msg += "❌ 缺失本章小结"
+            status_parts.append("❌ 缺失本章小结")
             issue_type = "error"
         else:
-            if is_centered:
-                status_msg += "✅ 小结已居中"
-                issue_type = "info" 
-                if not has_intro: issue_type = "warning"
-            else:
-                status_msg += "⚠️ 小结未居中"
-                issue_type = "warning"
+            status_parts.append("✅ 小结已居中" if is_centered else "⚠️ 小结未居中")
+            issue_type = "info" if (is_centered and has_intro) else "warning"
 
         issues.append({
             "type": issue_type,
-            "msg": status_msg,
+            "msg": f"第 {ch_num} 章检测: " + " | ".join(status_parts),
             "preview": f"范围: P{start_idx + 1} - P{end_idx + 1}"
         })
 
