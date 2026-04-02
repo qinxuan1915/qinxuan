@@ -5,6 +5,7 @@ def check(pdf_pages, detected_offset=0):
     目录一致性检测工具（增强版）：
     1. 优化正则匹配，强制要求引导符或明显间距。
     2. 增加非法数据过滤，防止误读正文表格/坐标。
+    3. 强化校验逻辑：必须【序号 + 标题】完整匹配。
     """
     results = []
     toc_items = []
@@ -30,9 +31,7 @@ def check(pdf_pages, detected_offset=0):
                     is_in_toc_area = True
                 continue
             
-            # --- 核心改进：加强版正则表达式 ---
-            # 1. 标题和页码之间必须有引导符 (....) 或 3个以上的空格
-            # 2. 页码必须是 1-4 位数字，过滤掉超长异常数字
+            # 核心改进：加强版正则表达式
             pattern = r'^((?:第\s*[0-9一二三四五六七八九十]+\s*[章节])|(?:[0-9\.]+))(.*?)(\S.*?)(?:\s*[\.·—…]{2,}\s*|\s{3,})(\d{1,4})$'
             match = re.match(pattern, line)
             
@@ -40,10 +39,7 @@ def check(pdf_pages, detected_offset=0):
                 section, gap, title, p_str = match.groups()
                 page_val = int(p_str)
                 
-                # --- 核心改进：过滤逻辑 ---
-                # 1. 页码不能为 0
-                # 2. 页码不能超过文档总数
-                # 3. 排除纯数字或纯特殊符号构成的“标题” (防止误匹配坐标数据)
+                # 过滤逻辑
                 if page_val == 0 or page_val > total_pages:
                     continue
                 if re.match(r'^[0-9\.\s\-\,]+$', title): 
@@ -53,8 +49,8 @@ def check(pdf_pages, detected_offset=0):
                     continue
 
                 toc_items.append({
-                    "section": section.replace(" ", ""),
-                    "title": title.strip(". "),
+                    "section": section.replace(" ", ""), # 序号：如 1.1.1
+                    "title": title.strip(". "),         # 标题：如 课题背景
                     "page": page_val,
                     "raw_line": line
                 })
@@ -82,18 +78,18 @@ def check(pdf_pages, detected_offset=0):
             else:
                 page_text = getattr(target_page, 'text', "")
             
-            clean_title = item["title"].replace(" ", "")
+            # --- 修改核心：拼接 序号 + 标题 进行比对 ---
+            full_search_text = (item["section"] + item["title"]).replace(" ", "")
             clean_page_text = page_text.replace(" ", "").replace("\n", "")
             
-            if clean_title in clean_page_text:
+            if full_search_text in clean_page_text:
                 status = "✅"
                 reason = "匹配成功"
                 success_count += 1
             else:
                 status = "❌"
-                reason = "正文页未找到匹配标题"
+                reason = f"正文页未找到完整标题: {full_search_text}"
 
-        # 修改此处描述：将“目录页码”改为“在目录中显示的页码”
         verification_details.append(
             f"{status} **{item['section']} {item['title']}** (在目录中显示的页码: {item['page']})\n"
             f"   - 结果: {reason}"
