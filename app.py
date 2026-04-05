@@ -57,18 +57,13 @@ def auto_detect_offset(pdf_pages):
         page_raw_text = get_clean_text(pdf_pages[i])
         
         # --- 策略 A：排除目录页干扰 ---
-        # 如果页面中点号（目录引导符）过多，则视为目录，直接跳过
         if page_raw_text.count("....") > 5:
             continue
             
         # --- 策略 B：双层标题同时出现匹配 ---
-        # 匹配一级标题（兼容“第1章”或“1 ”）
         has_l1 = ("第1章绪论" in page_raw_text) or ("1绪论" in page_raw_text)
-        
-        # 匹配二级标题（已删除 1.1.1 校验）
         has_l2 = ("1.1课题背景及研究现状" in page_raw_text) or ("1.1课题背景" in page_raw_text)
 
-        # 只要满足一级和二级标题特征，且不是目录页，即判定为正文起始页
         if has_l1 and has_l2:
             return i 
     
@@ -107,24 +102,31 @@ if st.button("开始全自动扫描", type="primary"):
             # --- 7. 结果展示区 ---
             st.markdown("---")
             tabs = st.tabs([
-                "1.目录一致性", "2.图表逻辑", "3.页眉距离", "4.章节规范"
+                "1.目录一致性", "2.图表逻辑", "3.页眉距离", "4.章节规范", "5.关联性检测", "6.页面格式"
             ])
 
+            # 模块配置
             modules_config = [
                 {"id": "m8_template",      "name": "章节规范",     "tab": tabs[3]},
-                {"id": "n3_toc",           "name": "目录一致性", "tab": tabs[0]}, 
+                {"id": "n3_toc",           "name": "目录一致性",    "tab": tabs[0]}, 
                 {"id": "m6_header_footer", "name": "页眉距离",     "tab": tabs[2]},
-                {"id": "m4_images",        "name": "图表逻辑",       "tab": tabs[1]},
+                {"id": "m4_images",        "name": "图表逻辑",     "tab": tabs[1]},
+                {"id": "m9_relation",      "name": "关联性检测",    "tab": tabs[4]},
+                {"id": "m99",              "name": "页面格式检测",  "tab": tabs[5]},
             ]
 
             for mod_cfg in modules_config:
                 with mod_cfg["tab"]:
                     try:
-                        # 动态加载并运行检测模块
                         module = importlib.import_module(f"modules.{mod_cfg['id']}")
                         importlib.reload(module) 
                         
-                        result_issues = module.check(pdf_pages, detected_offset=detected_offset)
+                        # --- 核心修改点 ---
+                        # 如果是 m99 模块，显式传入 pdf_file 参数，触发其内部的 pdfplumber 读取逻辑
+                        if mod_cfg["id"] == "m99":
+                            result_issues = module.check(pdf_pages, detected_offset=detected_offset, pdf_file=uploaded_pdf)
+                        else:
+                            result_issues = module.check(pdf_pages, detected_offset=detected_offset)
 
                         if not result_issues:
                             st.success(f"✅ {mod_cfg['name']} 未发现明显异常")
