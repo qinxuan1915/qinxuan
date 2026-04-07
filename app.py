@@ -13,23 +13,37 @@ st.set_page_config(
 # --- 2. 注入 CSS 样式 ---
 st.markdown("""
 <style>
+    /* 全局背景美化 */
     .main { background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); }
-    .stApp { background-attachment: fixed; }
+    
+    /* 标题渐变色 */
     h1 {
         background: linear-gradient(to right, #1e40af, #1e3a8a);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         font-weight: 800;
     }
-    [data-testid="stFileUploaderDropzone"] div div span { display: none; }
+
+    /* --- 核心修复：修改上传框提示文字 --- */
+    /* 1. 隐藏原有的 "Drag and drop file here" 文字 */
+    [data-testid="stFileUploaderDropzone"] section > div > span {
+        display: none;
+    }
+
+    /* 2. 在原有位置插入你的中文提示 */
+    [data-testid="stFileUploaderDropzone"] section > div::before {
+        content: "点击或拖拽 PDF 论文至此";
+        color: #1e3a8a;
+        font-weight: 500;
+        margin-right: 10px; /* 给右侧按钮留点空间 */
+    }
+
+    /* 3. 这里的修饰是为了防止重影：强制限制伪元素只生成一次 */
     [data-testid="stFileUploaderDropzone"] div div::after {
-       content: "点击或拖拽 PDF 论文至此";
-       text-align: center;
-       color: #1e3a8a;
+        display: none !important;
     }
 </style>
 """, unsafe_allow_html=True)
-
 # --- 3. 头部区域 ---
 st.title("🛡️论文格式智能卫士")
 
