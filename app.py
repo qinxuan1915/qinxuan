@@ -13,37 +13,23 @@ st.set_page_config(
 # --- 2. 注入 CSS 样式 ---
 st.markdown("""
 <style>
-    /* 全局背景美化 */
     .main { background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); }
-    
-    /* 标题渐变色 */
+    .stApp { background-attachment: fixed; }
     h1 {
         background: linear-gradient(to right, #1e40af, #1e3a8a);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         font-weight: 800;
     }
-
-    /* --- 核心修复：修改上传框提示文字 --- */
-    /* 1. 隐藏原有的 "Drag and drop file here" 文字 */
-    [data-testid="stFileUploaderDropzone"] section > div > span {
-        display: none;
-    }
-
-    /* 2. 在原有位置插入你的中文提示 */
-    [data-testid="stFileUploaderDropzone"] section > div::before {
-        content: "点击或拖拽 PDF 论文至此";
-        color: #1e3a8a;
-        font-weight: 500;
-        margin-right: 10px; /* 给右侧按钮留点空间 */
-    }
-
-    /* 3. 这里的修饰是为了防止重影：强制限制伪元素只生成一次 */
+    [data-testid="stFileUploaderDropzone"] div div span { display: none; }
     [data-testid="stFileUploaderDropzone"] div div::after {
-        display: none !important;
+       content: "点击或拖拽 PDF 论文至此";
+       text-align: center;
+       color: #1e3a8a;
     }
 </style>
 """, unsafe_allow_html=True)
+
 # --- 3. 头部区域 ---
 st.title("🛡️论文格式智能卫士")
 
@@ -116,32 +102,43 @@ if st.button("开始全自动扫描", type="primary"):
             # --- 7. 结果展示区 ---
             st.markdown("---")
             tabs = st.tabs([
-                "1.目录一致性", "2.图表逻辑", "3.页眉距离", "4.章节规范", "5.关联性检测", "6.页面格式"
+                "错误统计",  # 新增
+                "1.目录一致性",
+                "2.图表逻辑",
+                "3.页眉页脚与页边距检测",
+                "4.章节规范",
+                "5.关联性检测",
+                "6.页面格式",
+                "7.标题行距检测",
+                "8.页眉页脚与正文距离检测"
             ])
 
-            # 模块配置
             modules_config = [
-                {"id": "m8_template",      "name": "章节规范",     "tab": tabs[3]},
-                {"id": "n3_toc",           "name": "目录一致性",    "tab": tabs[0]}, 
-                {"id": "m6_header_footer", "name": "页眉距离",     "tab": tabs[2]},
-                {"id": "m4_images",        "name": "图表逻辑",     "tab": tabs[1]},
-                {"id": "m9_relation",      "name": "关联性检测",    "tab": tabs[4]},
-                {"id": "m99",              "name": "页面格式检测",  "tab": tabs[5]},
+                {"id": "m0_error_summary", "name": "错误统计", "tab": tabs[0]},  # 新增
+                {"id": "m8_template", "name": "章节规范", "tab": tabs[4]},  # 原 tabs[3] -> tabs[4]
+                {"id": "n3_toc", "name": "目录一致性", "tab": tabs[1]},  # 原 tabs[0] -> tabs[1]
+                {"id": "m6_header_footer", "name": "页眉距离", "tab": tabs[3]},  # 原 tabs[2] -> tabs[3]
+                {"id": "m4_images", "name": "图表逻辑", "tab": tabs[2]},  # 原 tabs[1] -> tabs[2]
+                {"id": "m9_relation", "name": "关联性检测", "tab": tabs[5]},  # 原 tabs[4] -> tabs[5]
+                {"id": "m99", "name": "页面格式检测", "tab": tabs[6]},  # 原 tabs[5] -> tabs[6]
+                {"id": "m10_title_spacing", "name": "标题间距检测", "tab": tabs[7]},  # 原 tabs[6] -> tabs[7]
+                {"id": "m11_body_header_footer_distance", "name": "正文与页眉页脚距离", "tab": tabs[8]},
+                # 原 tabs[7] -> tabs[8]
             ]
 
             for mod_cfg in modules_config:
                 with mod_cfg["tab"]:
                     try:
                         module = importlib.import_module(f"modules.{mod_cfg['id']}")
-                        importlib.reload(module) 
-                        
+                        importlib.reload(module)
+
                         # --- 核心修改点 ---
-                        # 如果是 m99 模块，显式传入 pdf_file 参数，触发其内部的 pdfplumber 读取逻辑
-                        if mod_cfg["id"] == "m99":
-                            result_issues = module.check(pdf_pages, detected_offset=detected_offset, pdf_file=uploaded_pdf)
+                        # m99和m0模块，都显式传入 pdf_file 参数，触发内部原生读取逻辑
+                        if mod_cfg["id"] == "m99" or mod_cfg["id"] == "m0_error_summary":
+                            result_issues = module.check(pdf_pages, detected_offset=detected_offset,
+                                                         pdf_file=uploaded_pdf)
                         else:
                             result_issues = module.check(pdf_pages, detected_offset=detected_offset)
-
                         if not result_issues:
                             st.success(f"✅ {mod_cfg['name']} 未发现明显异常")
                         else:
