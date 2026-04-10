@@ -174,7 +174,10 @@ def generate_html_report(pdf_pages, detected_offset, pdf_file):
         background-color: #e3f2fd;
         color: #000000;
     }
-
+    details summary {
+        font-size: 0.95rem;
+        color: #0a58ca;
+    }
     /* 深色模式适配 */
     [data-theme="dark"] .error-summary-container .error-box-red {
         background-color: #4a1a1a;
@@ -202,6 +205,9 @@ def generate_html_report(pdf_pages, detected_offset, pdf_file):
     [data-theme="dark"] .error-summary-container hr {
         border-color: #444;
     }
+    [data-theme="dark"] details summary {
+        color: #7baaf7;
+    }
     </style>
     """
 
@@ -221,17 +227,18 @@ def generate_html_report(pdf_pages, detected_offset, pdf_file):
     for module in stats['modules']:
         module_name = module['name']
         error_count = module['error_count']
-        error_msgs = module['error_msgs']
-
+        error_msgs = module.get('error_msgs', [])
         html += f'<div class="module-title">● {module_name}（错误数：{error_count}）</div>'
-
         if error_count == 0:
-            html += '<div class="no-error-box-blue">📄 无</div>'
+            # 无错误也折叠，summary 显示“无错误”
+            html += f'<details><summary style="cursor: pointer; font-weight: bold; margin: 8px 0;">✅ 无错误（点击展开）</summary><div style="margin-top: 8px;"><div class="no-error-box-blue">📄 无</div></div></details>'
         else:
+            html += f'<details><summary style="cursor: pointer; font-weight: bold; margin: 8px 0;">📋 点击展开/折叠具体错误（共 {error_count} 条）</summary><div style="margin-top: 8px;">'
             for idx, err_msg in enumerate(error_msgs, 1):
                 safe_msg = err_msg.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
                 safe_msg = safe_msg.replace('\n', '<br>')
                 html += f'<div class="error-box-red">🔴 错误 {idx}:<br>{safe_msg}</div>'
+            html += '</div></details>'
         html += "<br>"
 
     html += "</div>"
